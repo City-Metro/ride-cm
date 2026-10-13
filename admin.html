@@ -918,6 +918,14 @@ async function startAdmin() {
 }
 startAdmin();
 
+// Keep the Incidents / Maintenance tabs current (e.g. a window flipping to In Progress).
+// Skipped while a form is open or on other tabs, so nothing you are typing is lost.
+setInterval(() => {
+  if (document.getElementById('app').style.display === 'none') return;
+  if (document.querySelector('.modal-overlay.open')) return;
+  if (currentTab === 'incidents' || currentTab === 'maintenance') loadAll();
+}, 30000);
+
 // ─── FETCH HELPERS ────────────────────────────────────────────────────────────
 async function api(path, method = 'GET', body = null) {
   try {
