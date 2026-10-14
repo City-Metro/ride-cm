@@ -693,6 +693,9 @@
         <button class="nav-item" id="nav-announcement" onclick="showTab('announcement')">
           <span class="nav-icon">📢</span> Announcement
         </button>
+        <button class="nav-item" id="nav-instagram" onclick="showTab('instagram')">
+          <span class="nav-icon">📸</span> Instagram
+        </button>
       </div>
     </nav>
 
@@ -716,6 +719,9 @@
     </button>
     <button class="mobile-tab" data-tab="announcement" onclick="showTab('announcement')">
       <span class="mt-icon">📢</span>News
+    </button>
+    <button class="mobile-tab" data-tab="instagram" onclick="showTab('instagram')">
+      <span class="mt-icon">📸</span>Post
     </button>
   </nav>
 </div>
@@ -991,7 +997,7 @@ function showTab(tab) {
 }
 
 function renderCurrentTab() {
-  const map = { incidents: renderIncidents, maintenance: renderMaintenance, lines: renderLines, subscribers: renderSubscribers, announcement: renderAnnouncement };
+  const map = { incidents: renderIncidents, maintenance: renderMaintenance, lines: renderLines, subscribers: renderSubscribers, announcement: renderAnnouncement, instagram: renderInstagram };
   (map[currentTab] || (() => {}))();
 }
 
@@ -1684,6 +1690,155 @@ async function clearAnnouncement() {
     renderAnnouncement();
   } catch(e) { toast(e.message, 'error'); }
 }
+// ─── INSTAGRAM TAB (preview + manual post) ────────────────────────────────────
+const IG_EVENT_LABELS = {
+  incident_created:      'New alert (RIDER ALERT)',
+  incident_updated:      'Update or resolved (RIDER UPDATE)',
+  maintenance_created:   'Planned maintenance announcement',
+  maintenance_started:   'Maintenance started',
+  maintenance_updated:   'Maintenance update',
+  maintenance_completed: 'Maintenance completed',
+};
+const IG_EVENTS_FOR = {
+  incident:    ['incident_created', 'incident_updated'],
+  maintenance: ['maintenance_created', 'maintenance_started', 'maintenance_updated', 'maintenance_completed'],
+};
+let igPreviewData = null;
+
+function igDefaultEvent(kind, item) {
+  if (kind === 'incident') return item && item.status === 'resolved' ? 'incident_updated' : 'incident_created';
+  return ({ scheduled: 'maintenance_created', in_progress: 'maintenance_started', completed: 'maintenance_completed' })[item && item.status] || 'maintenance_updated';
+}
+
+function renderInstagram() {
+  igPreviewData = null;
+  const opt = (kind, x) => `<option value="${kind}|${esc(x.id)}">${esc(x.title)} (${esc(String(x.status).replace('_', ' '))})</option>`;
+  document.getElementById('mainContent').innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Instagram</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px">Preview a post's image and caption, then post it by hand, for example if the automatic post failed.</div>
+      </div>
+    </div>
+    <div id="ig_status"></div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Incident or maintenance</label>
+          <select class="form-input" id="ig_item" onchange="igOnItemChange()">
+            ${incidents.length ? `<optgroup label="Incidents">${incidents.slice(0, 30).map(x => opt('incident', x)).join('')}</optgroup>` : ''}
+            ${maintenance.length ? `<optgroup label="Maintenance">${maintenance.slice(0, 30).map(x => opt('maintenance', x)).join('')}</optgroup>` : ''}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Post as</label>
+          <select class="form-input" id="ig_event"></select>
+        </div>
+      </div>
+      <button class="btn btn-blue" id="ig_gen" onclick="igGeneratePreview()">Generate preview</button>
+    </div>
+    <div id="ig_preview"></div>
+  `;
+  if (!incidents.length && !maintenance.length) {
+    document.getElementById('ig_gen').disabled = true;
+    document.getElementById('ig_item').innerHTML = '<option>Nothing to post yet</option>';
+  } else {
+    igOnItemChange();
+  }
+  loadIgStatus();
+}
+
+function igSelected() {
+  const [kind, id] = document.getElementById('ig_item').value.split('|');
+  const item = (kind === 'incident' ? incidents : maintenance).find(x => x.id === id);
+  return { kind, id, item };
+}
+
+function igOnItemChange() {
+  const { kind, item } = igSelected();
+  document.getElementById('ig_event').innerHTML = IG_EVENTS_FOR[kind].map(e => `<option value="${e}">${IG_EVENT_LABELS[e]}</option>`).join('');
+  document.getElementById('ig_event').value = igDefaultEvent(kind, item);
+  document.getElementById('ig_preview').innerHTML = '';
+  igPreviewData = null;
+}
+
+async function loadIgStatus() {
+  const el = document.getElementById('ig_status');
+  try {
+    const s = await api('/api/instagram/status');
+    const box = (bg, bd, col, html) => `<div style="background:${bg};border:1px solid ${bd};color:${col};border-radius:10px;padding:12px 16px;font-size:13px;margin-bottom:16px">${html}</div>`;
+    let html = '';
+    if (!s.previewReady) html += box('rgba(234,179,8,.12)', 'rgba(234,179,8,.4)', 'var(--degraded)', `Previews need these Worker variables first: <b>${esc(s.missing.join(', '))}</b>.`);
+    else if (!s.configured) html += box('rgba(234,179,8,.12)', 'rgba(234,179,8,.4)', 'var(--degraded)', `You can preview, but posting needs: <b>${esc(s.missing.join(', '))}</b>.`);
+    if (s.last) {
+      const when = fmtTime(s.last.at), what = `${esc(s.last.title || '')} (${esc(IG_EVENT_LABELS[s.last.type] || s.last.type || '')})`;
+      html += s.last.ok
+        ? box('rgba(34,197,94,.1)', 'rgba(34,197,94,.3)', 'var(--operational)', `Last post worked: ${what}, ${when}${s.last.auto ? ' (automatic)' : ' (manual)'}.`)
+        : box('rgba(239,68,68,.1)', 'rgba(239,68,68,.35)', 'var(--critical)', `<b>The last ${s.last.auto ? 'automatic' : 'manual'} post failed</b>: ${what}, ${when}.<br>${esc(s.last.error || '')}<br><span style="color:var(--muted)">Pick it below, generate the preview and post it by hand.</span>`);
+    }
+    el.innerHTML = html;
+  } catch (e) { el.innerHTML = ''; }
+}
+
+async function igGeneratePreview() {
+  const { kind, id } = igSelected();
+  const event = document.getElementById('ig_event').value;
+  const btn = document.getElementById('ig_gen');
+  btn.disabled = true; btn.textContent = 'Drawing the image…';
+  const out = document.getElementById('ig_preview');
+  out.innerHTML = '';
+  try {
+    const r = await api('/api/instagram/preview', 'POST', { kind, id, event });
+    igPreviewData = { kind, id, event, imageUrl: r.imageUrl };
+    out.innerHTML = `
+      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;margin-top:20px">
+        <div>
+          <img src="${esc(r.imageUrl)}" alt="Post preview" style="width:340px;max-width:100%;border-radius:12px;border:1px solid var(--border);display:block"
+               onerror="this.outerHTML='<div style=&quot;width:340px;padding:24px;border:1px dashed var(--border);border-radius:12px;color:var(--critical);font-size:13px&quot;>The image could not be loaded. Check the Worker logs.</div>'">
+          <a href="${esc(r.imageUrl)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="margin-top:10px;text-decoration:none">Open full-size image</a>
+        </div>
+        <div style="flex:1;min-width:280px">
+          <label class="form-label">Caption (you can edit it)</label>
+          <textarea class="form-input" id="ig_caption" rows="13" oninput="document.getElementById('ig_count').textContent=this.value.length">${esc(r.caption)}</textarea>
+          <div style="font-size:12px;color:var(--faint);margin:4px 0 14px"><span id="ig_count">${r.caption.length}</span> / 2200 characters</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-blue" id="ig_post" onclick="igPostNow()" ${r.canPost ? '' : 'disabled title="Instagram variables are not set up yet"'}>Post to Instagram now</button>
+            <button class="btn btn-ghost" onclick="igCopyCaption()">Copy caption</button>
+          </div>
+          <div id="ig_result" style="margin-top:14px"></div>
+        </div>
+      </div>`;
+  } catch (e) {
+    out.innerHTML = `<div style="margin-top:16px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.35);color:var(--critical);border-radius:10px;padding:12px 16px;font-size:13px">${esc(e.message)}</div>`;
+  }
+  btn.disabled = false; btn.textContent = 'Generate preview';
+}
+
+function igCopyCaption() {
+  const text = document.getElementById('ig_caption').value;
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
+    () => toast('Caption copied', 'success'), () => toast('Select the text and copy it by hand', 'error'));
+}
+
+async function igPostNow() {
+  if (!igPreviewData) return;
+  if (!confirm('Post this to Instagram now? It goes public immediately.')) return;
+  const btn = document.getElementById('ig_post'), res = document.getElementById('ig_result');
+  btn.disabled = true; btn.textContent = 'Posting…'; res.innerHTML = '';
+  try {
+    const r = await api('/api/instagram/post', 'POST', {
+      kind: igPreviewData.kind, id: igPreviewData.id, event: igPreviewData.event,
+      caption: document.getElementById('ig_caption').value,
+    });
+    res.innerHTML = `<div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:var(--operational);border-radius:10px;padding:12px 16px;font-size:13px">Posted to Instagram. (post id ${esc(r.id)})</div>`;
+    toast('Posted to Instagram', 'success');
+  } catch (e) {
+    res.innerHTML = `<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.35);color:var(--critical);border-radius:10px;padding:12px 16px;font-size:13px"><b>Instagram post failed</b><br>${esc(e.message)}<br><span style="color:var(--muted)">You can still use "Open full-size image" and "Copy caption" to post it from the Instagram app.</span></div>`;
+  }
+  btn.disabled = false; btn.textContent = 'Post to Instagram now';
+  loadIgStatus();
+}
+
 // ─── TOAST ────────────────────────────────────────────────────────────────────
 let toastTimer;
 function toast(msg, type = 'default') {
