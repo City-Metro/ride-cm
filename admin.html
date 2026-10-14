@@ -918,13 +918,14 @@ async function startAdmin() {
 }
 startAdmin();
 
-// Keep the Incidents / Maintenance tabs current (e.g. a window flipping to In Progress).
+// Keep the Incidents / Maintenance tabs current (e.g. a window flipping to In Progress), every 2 minutes.
 // Skipped while a form is open or on other tabs, so nothing you are typing is lost.
 setInterval(() => {
+  if (document.hidden) return;                                   // background tab: don't spend KV reads
   if (document.getElementById('app').style.display === 'none') return;
   if (document.querySelector('.modal-overlay.open')) return;
   if (currentTab === 'incidents' || currentTab === 'maintenance') loadAll();
-}, 30000);
+}, 120000);
 
 // ─── FETCH HELPERS ────────────────────────────────────────────────────────────
 async function api(path, method = 'GET', body = null) {
