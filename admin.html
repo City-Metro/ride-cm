@@ -260,6 +260,7 @@
   .btn-green  { background: rgba(34,197,94,.15); color: var(--operational); border: 1px solid rgba(34,197,94,.3); }
   .btn-green:hover { background: rgba(34,197,94,.25); }
   .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
 
   /* ── TABLE ───────────────────────────────────────────────── */
   .table-wrap {
@@ -693,8 +694,8 @@
         <button class="nav-item" id="nav-announcement" onclick="showTab('announcement')">
           <span class="nav-icon">📢</span> Announcement
         </button>
-        <button class="nav-item" id="nav-instagram" onclick="showTab('instagram')">
-          <span class="nav-icon">📸</span> Instagram
+        <button class="nav-item" id="nav-social" onclick="showTab('social')">
+          <span class="nav-icon">📣</span> Social posts
         </button>
       </div>
     </nav>
@@ -720,8 +721,8 @@
     <button class="mobile-tab" data-tab="announcement" onclick="showTab('announcement')">
       <span class="mt-icon">📢</span>News
     </button>
-    <button class="mobile-tab" data-tab="instagram" onclick="showTab('instagram')">
-      <span class="mt-icon">📸</span>Post
+    <button class="mobile-tab" data-tab="social" onclick="showTab('social')">
+      <span class="mt-icon">📣</span>Post
     </button>
   </nav>
 </div>
@@ -997,7 +998,7 @@ function showTab(tab) {
 }
 
 function renderCurrentTab() {
-  const map = { incidents: renderIncidents, maintenance: renderMaintenance, lines: renderLines, subscribers: renderSubscribers, announcement: renderAnnouncement, instagram: renderInstagram };
+  const map = { incidents: renderIncidents, maintenance: renderMaintenance, lines: renderLines, subscribers: renderSubscribers, announcement: renderAnnouncement, social: renderSocial };
   (map[currentTab] || (() => {}))();
 }
 
@@ -1690,8 +1691,9 @@ async function clearAnnouncement() {
     renderAnnouncement();
   } catch(e) { toast(e.message, 'error'); }
 }
-// ─── INSTAGRAM TAB (preview + manual post) ────────────────────────────────────
-const IG_EVENT_LABELS = {
+// ─── SOCIAL TAB (preview + manual post to Instagram / Mastodon / Pixelfed) ───
+const SOC_NAMES = { instagram: 'Instagram', mastodon: 'Mastodon', pixelfed: 'Pixelfed' };
+const SOC_EVENT_LABELS = {
   incident_created:      'New alert (RIDER ALERT)',
   incident_updated:      'Update or resolved (RIDER UPDATE)',
   maintenance_created:   'Planned maintenance announcement',
@@ -1699,97 +1701,106 @@ const IG_EVENT_LABELS = {
   maintenance_updated:   'Maintenance update',
   maintenance_completed: 'Maintenance completed',
 };
-const IG_EVENTS_FOR = {
+const SOC_EVENTS_FOR = {
   incident:    ['incident_created', 'incident_updated'],
   maintenance: ['maintenance_created', 'maintenance_started', 'maintenance_updated', 'maintenance_completed'],
 };
-let igPreviewData = null;
+let socPreviewData = null;
 
-function igDefaultEvent(kind, item) {
+function socDefaultEvent(kind, item) {
   if (kind === 'incident') return item && item.status === 'resolved' ? 'incident_updated' : 'incident_created';
   return ({ scheduled: 'maintenance_created', in_progress: 'maintenance_started', completed: 'maintenance_completed' })[item && item.status] || 'maintenance_updated';
 }
 
-function renderInstagram() {
-  igPreviewData = null;
+function renderSocial() {
+  socPreviewData = null;
   const opt = (kind, x) => `<option value="${kind}|${esc(x.id)}">${esc(x.title)} (${esc(String(x.status).replace('_', ' '))})</option>`;
   document.getElementById('mainContent').innerHTML = `
     <div class="page-header">
       <div>
-        <div class="page-title">Instagram</div>
-        <div style="font-size:13px;color:var(--muted);margin-top:2px">Preview a post's image and caption, then post it by hand, for example if the automatic post failed.</div>
+        <div class="page-title">Social posts</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px">Preview the image and captions, then post to Instagram, Mastodon and Pixelfed by hand, for example if an automatic post failed.</div>
       </div>
     </div>
-    <div id="ig_status"></div>
+    <div id="soc_status" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px">
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Incident or maintenance</label>
-          <select class="form-input" id="ig_item" onchange="igOnItemChange()">
+          <select class="form-input" id="soc_item" onchange="socOnItemChange()">
             ${incidents.length ? `<optgroup label="Incidents">${incidents.slice(0, 30).map(x => opt('incident', x)).join('')}</optgroup>` : ''}
             ${maintenance.length ? `<optgroup label="Maintenance">${maintenance.slice(0, 30).map(x => opt('maintenance', x)).join('')}</optgroup>` : ''}
           </select>
         </div>
         <div class="form-group">
           <label class="form-label">Post as</label>
-          <select class="form-input" id="ig_event"></select>
+          <select class="form-input" id="soc_event"></select>
         </div>
       </div>
-      <button class="btn btn-blue" id="ig_gen" onclick="igGeneratePreview()">Generate preview</button>
+      <button class="btn btn-blue" id="soc_gen" onclick="socGeneratePreview()">Generate preview</button>
     </div>
-    <div id="ig_preview"></div>
+    <div id="soc_preview"></div>
   `;
   if (!incidents.length && !maintenance.length) {
-    document.getElementById('ig_gen').disabled = true;
-    document.getElementById('ig_item').innerHTML = '<option>Nothing to post yet</option>';
+    document.getElementById('soc_gen').disabled = true;
+    document.getElementById('soc_item').innerHTML = '<option>Nothing to post yet</option>';
   } else {
-    igOnItemChange();
+    socOnItemChange();
   }
-  loadIgStatus();
+  loadSocialStatus();
 }
 
-function igSelected() {
-  const [kind, id] = document.getElementById('ig_item').value.split('|');
+function socSelected() {
+  const [kind, id] = document.getElementById('soc_item').value.split('|');
   const item = (kind === 'incident' ? incidents : maintenance).find(x => x.id === id);
   return { kind, id, item };
 }
 
-function igOnItemChange() {
-  const { kind, item } = igSelected();
-  document.getElementById('ig_event').innerHTML = IG_EVENTS_FOR[kind].map(e => `<option value="${e}">${IG_EVENT_LABELS[e]}</option>`).join('');
-  document.getElementById('ig_event').value = igDefaultEvent(kind, item);
-  document.getElementById('ig_preview').innerHTML = '';
-  igPreviewData = null;
+function socOnItemChange() {
+  const { kind, item } = socSelected();
+  document.getElementById('soc_event').innerHTML = SOC_EVENTS_FOR[kind].map(e => `<option value="${e}">${SOC_EVENT_LABELS[e]}</option>`).join('');
+  document.getElementById('soc_event').value = socDefaultEvent(kind, item);
+  document.getElementById('soc_preview').innerHTML = '';
+  socPreviewData = null;
 }
 
-async function loadIgStatus() {
-  const el = document.getElementById('ig_status');
+async function loadSocialStatus() {
+  const el = document.getElementById('soc_status');
   try {
-    const s = await api('/api/instagram/status');
-    const box = (bg, bd, col, html) => `<div style="background:${bg};border:1px solid ${bd};color:${col};border-radius:10px;padding:12px 16px;font-size:13px;margin-bottom:16px">${html}</div>`;
-    let html = '';
-    if (!s.previewReady) html += box('rgba(234,179,8,.12)', 'rgba(234,179,8,.4)', 'var(--degraded)', `Previews need these Worker variables first: <b>${esc(s.missing.join(', '))}</b>.`);
-    else if (!s.configured) html += box('rgba(234,179,8,.12)', 'rgba(234,179,8,.4)', 'var(--degraded)', `You can preview, but posting needs: <b>${esc(s.missing.join(', '))}</b>.`);
-    if (s.last) {
-      const when = fmtTime(s.last.at), what = `${esc(s.last.title || '')} (${esc(IG_EVENT_LABELS[s.last.type] || s.last.type || '')})`;
-      html += s.last.ok
-        ? box('rgba(34,197,94,.1)', 'rgba(34,197,94,.3)', 'var(--operational)', `Last post worked: ${what}, ${when}${s.last.auto ? ' (automatic)' : ' (manual)'}.`)
-        : box('rgba(239,68,68,.1)', 'rgba(239,68,68,.35)', 'var(--critical)', `<b>The last ${s.last.auto ? 'automatic' : 'manual'} post failed</b>: ${what}, ${when}.<br>${esc(s.last.error || '')}<br><span style="color:var(--muted)">Pick it below, generate the preview and post it by hand.</span>`);
-    }
-    el.innerHTML = html;
+    const s = await api('/api/social/status');
+    const warn = !s.previewReady
+      ? `<div style="flex-basis:100%;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);color:var(--degraded);border-radius:10px;padding:12px 16px;font-size:13px">Previews need these Worker variables first: <b>${esc(s.missingForPreview.join(', '))}</b>.</div>` : '';
+    el.innerHTML = warn + Object.entries(s.platforms).map(([key, p]) => {
+      const l = p.last;
+      let last = '<span style="color:var(--faint)">No posts yet.</span>';
+      if (l) {
+        const what = `${esc(l.title || '')} (${esc(SOC_EVENT_LABELS[l.type] || l.type || '')})`;
+        last = l.ok
+          ? `<span style="color:var(--operational)">Last post worked${l.auto ? ' (automatic)' : ' (manual)'}</span><br><span style="color:var(--muted)">${what}, ${fmtTime(l.at)}</span>`
+          : `<span style="color:var(--critical)"><b>Last ${l.auto ? 'automatic' : 'manual'} post failed</b></span><br><span style="color:var(--muted)">${what}, ${fmtTime(l.at)}</span><br><span style="color:var(--critical)">${esc(l.error || '')}</span>`;
+      }
+      const state = p.configured
+        ? '<span class="badge badge-completed">Ready</span>'
+        : `<span class="badge badge-scheduled" title="Missing: ${esc(p.missing.join(', '))}">Not set up</span>`;
+      return `<div style="flex:1;min-width:230px;background:var(--surface);border:1px solid ${l && !l.ok ? 'rgba(239,68,68,.45)' : 'var(--border)'};border-radius:12px;padding:14px 16px;font-size:12px;line-height:1.5">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:14px">${esc(p.name)}</b>${state}</div>
+        ${p.configured ? '' : `<div style="color:var(--degraded);margin-bottom:6px">Missing: ${esc(p.missing.join(', '))}</div>`}${last}</div>`;
+    }).join('');
   } catch (e) { el.innerHTML = ''; }
 }
 
-async function igGeneratePreview() {
-  const { kind, id } = igSelected();
-  const event = document.getElementById('ig_event').value;
-  const btn = document.getElementById('ig_gen');
+async function socGeneratePreview() {
+  const { kind, id } = socSelected();
+  const event = document.getElementById('soc_event').value;
+  const btn = document.getElementById('soc_gen');
   btn.disabled = true; btn.textContent = 'Drawing the image…';
-  const out = document.getElementById('ig_preview');
+  const out = document.getElementById('soc_preview');
   out.innerHTML = '';
   try {
-    const r = await api('/api/instagram/preview', 'POST', { kind, id, event });
-    igPreviewData = { kind, id, event, imageUrl: r.imageUrl };
+    const r = await api('/api/social/preview', 'POST', { kind, id, event });
+    socPreviewData = { kind, id, event, can: r.can };
+    const postBtn = (key, label) => `<button class="btn btn-blue" id="soc_post_${key}" onclick="socPost('${key}')" ${r.can[key] ? '' : 'disabled title="Not set up yet"'}>${label}</button>`;
+    const anyCan = Object.values(r.can).some(Boolean);
     out.innerHTML = `
       <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;margin-top:20px">
         <div>
@@ -1797,15 +1808,20 @@ async function igGeneratePreview() {
                onerror="this.outerHTML='<div style=&quot;width:340px;padding:24px;border:1px dashed var(--border);border-radius:12px;color:var(--critical);font-size:13px&quot;>The image could not be loaded. Check the Worker logs.</div>'">
           <a href="${esc(r.imageUrl)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="margin-top:10px;text-decoration:none">Open full-size image</a>
         </div>
-        <div style="flex:1;min-width:280px">
-          <label class="form-label">Caption (you can edit it)</label>
-          <textarea class="form-input" id="ig_caption" rows="13" oninput="document.getElementById('ig_count').textContent=this.value.length">${esc(r.caption)}</textarea>
-          <div style="font-size:12px;color:var(--faint);margin:4px 0 14px"><span id="ig_count">${r.caption.length}</span> / 2200 characters</div>
+        <div style="flex:1;min-width:290px">
+          <label class="form-label">Instagram caption (you can edit it)</label>
+          <textarea class="form-input" id="soc_cap_ig" rows="8" oninput="document.getElementById('soc_cnt_ig').textContent=this.value.length">${esc(r.captions.instagram)}</textarea>
+          <div style="font-size:12px;color:var(--faint);margin:4px 0 14px"><span id="soc_cnt_ig">${r.captions.instagram.length}</span> / 2200 characters
+            · <a href="#" onclick="socCopy('soc_cap_ig');return false" style="color:var(--accent)">Copy</a></div>
+          <label class="form-label">Mastodon and Pixelfed caption (you can edit it)</label>
+          <textarea class="form-input" id="soc_cap_fedi" rows="6" oninput="document.getElementById('soc_cnt_fedi').textContent=this.value.length">${esc(r.captions.fediverse)}</textarea>
+          <div style="font-size:12px;color:var(--faint);margin:4px 0 14px"><span id="soc_cnt_fedi">${r.captions.fediverse.length}</span> / ${r.fediMax} characters
+            · <a href="#" onclick="socCopy('soc_cap_fedi');return false" style="color:var(--accent)">Copy</a></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button class="btn btn-blue" id="ig_post" onclick="igPostNow()" ${r.canPost ? '' : 'disabled title="Instagram variables are not set up yet"'}>Post to Instagram now</button>
-            <button class="btn btn-ghost" onclick="igCopyCaption()">Copy caption</button>
+            ${postBtn('instagram', 'Post to Instagram')}${postBtn('mastodon', 'Post to Mastodon')}${postBtn('pixelfed', 'Post to Pixelfed')}
+            <button class="btn btn-blue" id="soc_post_all" onclick="socPost('all')" ${anyCan ? '' : 'disabled'} style="background:var(--operational);color:#04210f">Post to all that are set up</button>
           </div>
-          <div id="ig_result" style="margin-top:14px"></div>
+          <div id="soc_result" style="margin-top:14px"></div>
         </div>
       </div>`;
   } catch (e) {
@@ -1814,29 +1830,38 @@ async function igGeneratePreview() {
   btn.disabled = false; btn.textContent = 'Generate preview';
 }
 
-function igCopyCaption() {
-  const text = document.getElementById('ig_caption').value;
+function socCopy(id) {
+  const text = document.getElementById(id).value;
   (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
     () => toast('Caption copied', 'success'), () => toast('Select the text and copy it by hand', 'error'));
 }
 
-async function igPostNow() {
-  if (!igPreviewData) return;
-  if (!confirm('Post this to Instagram now? It goes public immediately.')) return;
-  const btn = document.getElementById('ig_post'), res = document.getElementById('ig_result');
-  btn.disabled = true; btn.textContent = 'Posting…'; res.innerHTML = '';
+async function socPost(platform) {
+  if (!socPreviewData) return;
+  const where = platform === 'all' ? 'every platform that is set up' : SOC_NAMES[platform];
+  if (!confirm(`Post this to ${where} now? It goes public immediately.`)) return;
+  const buttons = [...document.querySelectorAll('#soc_preview [id^="soc_post_"]')];
+  const res = document.getElementById('soc_result');
+  buttons.forEach(b => { b.disabled = true; });
+  res.innerHTML = '<span style="color:var(--muted);font-size:13px">Posting…</span>';
   try {
-    const r = await api('/api/instagram/post', 'POST', {
-      kind: igPreviewData.kind, id: igPreviewData.id, event: igPreviewData.event,
-      caption: document.getElementById('ig_caption').value,
+    const r = await api('/api/social/post', 'POST', {
+      kind: socPreviewData.kind, id: socPreviewData.id, event: socPreviewData.event, platform,
+      captions: { instagram: document.getElementById('soc_cap_ig').value, fediverse: document.getElementById('soc_cap_fedi').value },
     });
-    res.innerHTML = `<div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:var(--operational);border-radius:10px;padding:12px 16px;font-size:13px">Posted to Instagram. (post id ${esc(r.id)})</div>`;
-    toast('Posted to Instagram', 'success');
+    const rows = Object.entries(r.results).map(([key, x]) => x.ok
+      ? `<div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:var(--operational);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:8px"><b>${SOC_NAMES[key]}:</b> posted${x.url ? ` · <a href="${esc(x.url)}" target="_blank" rel="noopener" style="color:inherit">open the post</a>` : ''}</div>`
+      : `<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.35);color:var(--critical);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:8px"><b>${SOC_NAMES[key]} failed</b><br>${esc(x.error)}</div>`).join('');
+    const failed = Object.values(r.results).some(x => !x.ok);
+    res.innerHTML = rows + (failed ? '<div style="color:var(--muted);font-size:12px">Use "Open full-size image" and "Copy" to post it by hand in the app instead.</div>' : '');
+    toast(failed ? 'Some posts failed, see details' : 'Posted', failed ? 'error' : 'success');
   } catch (e) {
-    res.innerHTML = `<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.35);color:var(--critical);border-radius:10px;padding:12px 16px;font-size:13px"><b>Instagram post failed</b><br>${esc(e.message)}<br><span style="color:var(--muted)">You can still use "Open full-size image" and "Copy caption" to post it from the Instagram app.</span></div>`;
+    res.innerHTML = `<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.35);color:var(--critical);border-radius:10px;padding:12px 16px;font-size:13px">${esc(e.message)}</div>`;
   }
-  btn.disabled = false; btn.textContent = 'Post to Instagram now';
-  loadIgStatus();
+  // re-enable the buttons for the platforms that are set up
+  (socPreviewData.can ? Object.entries(socPreviewData.can) : []).forEach(([k, can]) => { const b = document.getElementById('soc_post_' + k); if (b) b.disabled = !can; });
+  const all = document.getElementById('soc_post_all'); if (all) all.disabled = !Object.values(socPreviewData.can || {}).some(Boolean);
+  loadSocialStatus();
 }
 
 // ─── TOAST ────────────────────────────────────────────────────────────────────
