@@ -1691,8 +1691,8 @@ async function clearAnnouncement() {
     renderAnnouncement();
   } catch(e) { toast(e.message, 'error'); }
 }
-// ─── SOCIAL TAB (preview + manual post to Instagram / Mastodon / Pixelfed) ───
-const SOC_NAMES = { instagram: 'Instagram', mastodon: 'Mastodon', pixelfed: 'Pixelfed' };
+// ─── SOCIAL TAB (preview + manual post to Instagram / Mastodon) ───
+const SOC_NAMES = { instagram: 'Instagram', mastodon: 'Mastodon' };
 const SOC_EVENT_LABELS = {
   incident_created:      'New alert (RIDER ALERT)',
   incident_updated:      'Update or resolved (RIDER UPDATE)',
@@ -1719,7 +1719,7 @@ function renderSocial() {
     <div class="page-header">
       <div>
         <div class="page-title">Social posts</div>
-        <div style="font-size:13px;color:var(--muted);margin-top:2px">Preview the image and captions, then post to Instagram, Mastodon and Pixelfed by hand, for example if an automatic post failed.</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px">Preview the image and captions, then post to Instagram and Mastodon by hand, for example if an automatic post failed.</div>
       </div>
     </div>
     <div id="soc_status" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
@@ -1813,12 +1813,12 @@ async function socGeneratePreview() {
           <textarea class="form-input" id="soc_cap_ig" rows="8" oninput="document.getElementById('soc_cnt_ig').textContent=this.value.length">${esc(r.captions.instagram)}</textarea>
           <div style="font-size:12px;color:var(--faint);margin:4px 0 14px"><span id="soc_cnt_ig">${r.captions.instagram.length}</span> / 2200 characters
             · <a href="#" onclick="socCopy('soc_cap_ig');return false" style="color:var(--accent)">Copy</a></div>
-          <label class="form-label">Mastodon and Pixelfed caption (you can edit it)</label>
-          <textarea class="form-input" id="soc_cap_fedi" rows="6" oninput="document.getElementById('soc_cnt_fedi').textContent=this.value.length">${esc(r.captions.fediverse)}</textarea>
-          <div style="font-size:12px;color:var(--faint);margin:4px 0 14px"><span id="soc_cnt_fedi">${r.captions.fediverse.length}</span> / ${r.fediMax} characters
-            · <a href="#" onclick="socCopy('soc_cap_fedi');return false" style="color:var(--accent)">Copy</a></div>
+          <label class="form-label">Mastodon caption (you can edit it)</label>
+          <textarea class="form-input" id="soc_cap_masto" rows="6" oninput="document.getElementById('soc_cnt_masto').textContent=this.value.length">${esc(r.captions.mastodon)}</textarea>
+          <div style="font-size:12px;color:var(--faint);margin:4px 0 14px"><span id="soc_cnt_masto">${r.captions.mastodon.length}</span> / ${r.mastodonMax} characters
+            · <a href="#" onclick="socCopy('soc_cap_masto');return false" style="color:var(--accent)">Copy</a></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            ${postBtn('instagram', 'Post to Instagram')}${postBtn('mastodon', 'Post to Mastodon')}${postBtn('pixelfed', 'Post to Pixelfed')}
+            ${postBtn('instagram', 'Post to Instagram')}${postBtn('mastodon', 'Post to Mastodon')}
             <button class="btn btn-blue" id="soc_post_all" onclick="socPost('all')" ${anyCan ? '' : 'disabled'} style="background:var(--operational);color:#04210f">Post to all that are set up</button>
           </div>
           <div id="soc_result" style="margin-top:14px"></div>
@@ -1847,7 +1847,7 @@ async function socPost(platform) {
   try {
     const r = await api('/api/social/post', 'POST', {
       kind: socPreviewData.kind, id: socPreviewData.id, event: socPreviewData.event, platform,
-      captions: { instagram: document.getElementById('soc_cap_ig').value, fediverse: document.getElementById('soc_cap_fedi').value },
+      captions: { instagram: document.getElementById('soc_cap_ig').value, mastodon: document.getElementById('soc_cap_masto').value },
     });
     const rows = Object.entries(r.results).map(([key, x]) => x.ok
       ? `<div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:var(--operational);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:8px"><b>${SOC_NAMES[key]}:</b> posted${x.url ? ` · <a href="${esc(x.url)}" target="_blank" rel="noopener" style="color:inherit">open the post</a>` : ''}</div>`
@@ -1863,6 +1863,14 @@ async function socPost(platform) {
   const all = document.getElementById('soc_post_all'); if (all) all.disabled = !Object.values(socPreviewData.can || {}).some(Boolean);
   loadSocialStatus();
 }
+
+// A second click (or tap) while a save is still running must not send the request again,
+// otherwise the same incident, maintenance window or subscriber is created twice.
+function once(fn) { let busy = false; return async (...a) => { if (busy) return; busy = true; try { return await fn(...a); } finally { busy = false; } }; }
+saveIncident = once(saveIncident);
+saveMaintenance = once(saveMaintenance);
+saveSubscriber = once(saveSubscriber);
+saveLines = once(saveLines);
 
 // ─── TOAST ────────────────────────────────────────────────────────────────────
 let toastTimer;
