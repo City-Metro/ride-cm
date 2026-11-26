@@ -67,7 +67,7 @@ Response and remediation timelines may vary depending on the complexity and seve
 
 This policy applies to:
 
-- The [alertscitymetro.xyz](https://alerts.citymetro.xyz) website.
+- The [alerts.citymetro.xyz](https://alerts.citymetro.xyz) website.
 - Official website functionality and services operated directly as part of the website.
 - Related infrastructure where explicitly authorized for testing.
 
