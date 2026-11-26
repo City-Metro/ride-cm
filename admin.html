@@ -1535,7 +1535,7 @@ function renderLinePicker(containerId, selected, prefix) {
     <div class="line-pick-all ${everyLine ? 'selected' : ''}" title="Affects every line - all subscribers are notified"
       onclick="toggleAllLines('${containerId}','${prefix}')">All lines</div>
   ` + allLines.map(line => `
-    <div class="line-pick-item ${selected.includes(line.id) ? 'selected' : ''}"
+    <div class="line-pick-item ${selected.includes(line.id) ? 'selected' : ''}" data-line-id="${esc(line.id)}"
       style="color:${selected.includes(line.id) ? 'white' : line.color};background:${selected.includes(line.id) ? line.color : 'var(--bg)'};border-color:${line.color}"
       onclick="toggleLine('${containerId}','${line.id}','${prefix}')">
       <span class="line-dot" style="background:${selected.includes(line.id) ? 'white' : line.color}"></span>
@@ -1589,11 +1589,11 @@ function toggleWaypoint(containerId, wp) {
 }
 
 function getSelectedLines(containerId) {
+  // Read the line ID straight from the element. (It used to match on the visible line name, which
+  // silently dropped lines whose names were duplicated or had stray spaces.)
   return [...document.getElementById(containerId).querySelectorAll('.line-pick-item.selected')]
-    .map(el => {
-      const name = el.textContent.trim().replace(/•\s*/, '');
-      return allLines.find(l => l.name === name)?.id || '';
-    }).filter(Boolean);
+    .map(el => el.dataset.lineId)
+    .filter(Boolean);
 }
 
 function getSelectedWaypoints(containerId) {
