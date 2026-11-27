@@ -8,6 +8,7 @@
 <script>
   // Worker URL - trailing slash is removed automatically
   const API_BASE = 'https://api.alerts.citymetro.xyz'.replace(/\/+$/, '');
+  const PUBLIC_API = '/citymetro/alerts'; // public data: this site's Worker adds the API key
 
   function toggleDropdown(btn){
     const dd = btn.closest('.nav-dropdown');
@@ -427,10 +428,10 @@ let linesCache=[], incidentsCache=[], maintenanceCache=[];
 async function loadAll(){
   try{
     const [status, incidents, maintenance, uptime] = await Promise.all([
-      fetch(`${API_BASE}/api/status`).then(r=>r.json()),
-      fetch(`${API_BASE}/api/incidents`).then(r=>r.json()),
-      fetch(`${API_BASE}/api/maintenance`).then(r=>r.json()),
-      fetch(`${API_BASE}/api/uptime`).then(r=>r.json()),
+      fetch(`${PUBLIC_API}/api/status`).then(r=>r.json()),
+      fetch(`${PUBLIC_API}/api/incidents`).then(r=>r.json()),
+      fetch(`${PUBLIC_API}/api/maintenance`).then(r=>r.json()),
+      fetch(`${PUBLIC_API}/api/uptime`).then(r=>r.json()),
     ]);
     linesCache=status.lineStatuses||[];
     incidentsCache=incidents;
