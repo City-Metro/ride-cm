@@ -1,0 +1,10 @@
+# Files in this repo that must NOT be published on the website
+.assetsignore
+.git
+.gitignore
+.wrangler
+.dev.vars*
+.env*
+node_modules
+wrangler.jsonc
+worker
