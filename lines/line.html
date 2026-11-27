@@ -6,6 +6,7 @@
 <title>Line — City Metro</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>const API_BASE='https://api.alerts.citymetro.xyz'.replace(/\/+$/,'');
+const PUBLIC_API = '/citymetro/alerts'; // public data: this site's Worker adds the API key
 function toggleDropdown(btn){
   const dd = btn.closest('.nav-dropdown');
   const wasOpen = dd.classList.contains('open');
@@ -164,9 +165,9 @@ async function load(){
   if(!slug){document.getElementById('page').innerHTML='<div class="error-box">No line ID provided.</div>';return;}
   try{
     const [lines,incidents,maintenance]=await Promise.all([
-      fetch(`${API_BASE}/api/lines`).then(r=>r.json()),
-      fetch(`${API_BASE}/api/incidents`).then(r=>r.json()),
-      fetch(`${API_BASE}/api/maintenance`).then(r=>r.json()),
+      fetch(`${PUBLIC_API}/api/lines`).then(r=>r.json()),
+      fetch(`${PUBLIC_API}/api/incidents`).then(r=>r.json()),
+      fetch(`${PUBLIC_API}/api/maintenance`).then(r=>r.json()),
     ]);
     lineData=lines.find(l=>l.slug===slug||l.id===slug);
     if(!lineData){document.getElementById('page').innerHTML='<div class="error-box">Line not found.</div>';return;}
