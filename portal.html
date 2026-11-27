@@ -8,6 +8,7 @@
 <script>
   // Worker URL - trailing slash is removed automatically
   const API_BASE = 'https://api.alerts.citymetro.xyz'.replace(/\/+$/, '');
+  const PUBLIC_API = '/citymetro/alerts'; // public data: this site's Worker adds the API key
 
   function toggleDropdown(btn){
     const dd = btn.closest('.nav-dropdown');
@@ -519,7 +520,7 @@
     try {
       const [profile, lineList] = await Promise.all([
         MetroAuth.api('/api/me'),
-        fetch(API_BASE + '/api/lines').then(r => r.json()),
+        fetch(PUBLIC_API + '/api/lines').then(r => r.json()),
       ]);
       me = profile; lines = lineList;
       if (me.subscription) {
