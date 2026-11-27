@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>
   const API_BASE = 'https://api.alerts.citymetro.xyz'.replace(/\/+$/, '');
+  const PUBLIC_API = '/citymetro/alerts'; // public data: this site's Worker adds the API key
   function toggleDropdown(btn){
     const dd=btn.closest('.nav-dropdown');
     const wasOpen=dd.classList.contains('open');
@@ -234,8 +235,8 @@ async function load(){
 
   try{
     const [incidents, lines] = await Promise.all([
-      fetch(`${API_BASE}/api/incidents`).then(r=>r.json()),
-      fetch(`${API_BASE}/api/lines`).then(r=>r.json()),
+      fetch(`${PUBLIC_API}/api/incidents`).then(r=>r.json()),
+      fetch(`${PUBLIC_API}/api/lines`).then(r=>r.json()),
     ]);
 
     const inc = incidents.find(i=>i.id===incId);
